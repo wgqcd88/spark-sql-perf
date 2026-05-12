@@ -23,49 +23,52 @@ object Tpcds {
       useDoubleForDecimal: Boolean = false,
       useStringForDate: Boolean = false)
 
-  private val parser = new scopt.OptionParser[Conf]("Tpcds") {
-    head("com.wgq.Tpcds", "0.1.0")
-    opt[String]("phase")
-      .validate(v =>
-        if (Set("generate", "register", "run", "all").contains(v)) success
-        else failure("phase must be generate|register|run|all"))
-      .action((v, c) => c.copy(phase = v))
-      .text("generate|register|run|all (default: all)")
-    opt[String]("scaleFactor").action((v, c) => c.copy(scaleFactor = v))
-      .text("TPC-DS scale factor, default 1")
-    opt[String]("location").required().action((v, c) => c.copy(location = v))
-      .text("data root, e.g. abfss://warehouse@sa.dfs.core.windows.net/tpcds_sf1")
-    opt[String]("format").action((v, c) => c.copy(format = v))
-      .text("parquet|orc, default parquet")
-    opt[Boolean]("partitionTables").action((v, c) => c.copy(partitionTables = v))
-    opt[Boolean]("clusterByPartitionColumns").action((v, c) => c.copy(clusterByPartitionColumns = v))
-    opt[Boolean]("overwrite").action((v, c) => c.copy(overwrite = v))
-    opt[Int]("numPartitions").action((v, c) => c.copy(numPartitions = v))
-      .text("Spark write partitions, default 100")
-    opt[String]("database").action((v, c) => c.copy(database = v))
-      .text("Hive database to register, default tpcds")
-    opt[String]("dsdgenDir").action((v, c) => c.copy(dsdgenDir = v))
-      .text("path to dsdgen, default /opt/tpcds-kit/tools")
-    opt[Int]("iterations").action((v, c) => c.copy(iterations = v))
-      .text("query iterations, default 1")
-    opt[Seq[String]]("queries").action((v, c) => c.copy(queries = v))
-      .text("comma-separated query subset (e.g. q1,q14a). Default: all 99.")
-    opt[String]("resultLocation").action((v, c) => c.copy(resultLocation = v))
-      .text("where to write timing JSON; default <location>/_results")
-    opt[Int]("timeoutSec").action((v, c) => c.copy(timeoutSec = v))
-      .text("per-query timeout, 0 = no timeout")
-    opt[Boolean]("useDoubleForDecimal").action((v, c) => c.copy(useDoubleForDecimal = v))
-    opt[Boolean]("useStringForDate").action((v, c) => c.copy(useStringForDate = v))
-    help("help")
+  private def parseArgs(argv: Array[String]): Conf = {
+    val kv: Map[String, String] = argv.toList.flatMap {
+      case s if s.startsWith("--") =>
+        val body = s.stripPrefix("--")
+        val (k, v) = body.indexOf('=') match {
+          case -1 => (body, "true")
+          case i  => (body.substring(0, i), body.substring(i + 1))
+        }
+        Some(k -> v)
+      case _ => None
+    }.toMap
+
+    def str(k: String, d: String): String = kv.getOrElse(k, d)
+    def boolean(k: String, d: Boolean): Boolean = kv.get(k).map(_.toBoolean).getOrElse(d)
+    def int(k: String, d: Int): Int = kv.get(k).map(_.toInt).getOrElse(d)
+    def seq(k: String): Seq[String] =
+      kv.get(k).map(_.split(",").map(_.trim).filter(_.nonEmpty).toSeq).getOrElse(Seq.empty)
+
+    val phase = str("phase", "all")
+    require(Set("generate", "register", "run", "all").contains(phase),
+      s"phase must be generate|register|run|all, got: $phase")
+    val location = kv.getOrElse("location", sys.error("--location is required"))
+    val resultLocation = kv.get("resultLocation").filter(_.nonEmpty)
+      .getOrElse(s"${location.stripSuffix("/")}/_results")
+
+    Conf(
+      phase = phase,
+      scaleFactor = str("scaleFactor", "1"),
+      location = location,
+      format = str("format", "parquet"),
+      partitionTables = boolean("partitionTables", false),
+      clusterByPartitionColumns = boolean("clusterByPartitionColumns", false),
+      overwrite = boolean("overwrite", true),
+      numPartitions = int("numPartitions", 100),
+      database = str("database", "tpcds"),
+      dsdgenDir = str("dsdgenDir", "/opt/tpcds-kit/tools"),
+      iterations = int("iterations", 1),
+      queries = seq("queries"),
+      resultLocation = resultLocation,
+      timeoutSec = int("timeoutSec", 0),
+      useDoubleForDecimal = boolean("useDoubleForDecimal", false),
+      useStringForDate = boolean("useStringForDate", false))
   }
 
   def main(argv: Array[String]): Unit = {
-    val conf = parser.parse(argv, Conf()) match {
-      case Some(c) =>
-        val rl = if (c.resultLocation.isEmpty) s"${c.location.stripSuffix("/")}/_results" else c.resultLocation
-        c.copy(resultLocation = rl)
-      case None => sys.exit(2)
-    }
+    val conf = parseArgs(argv)
 
     val spark = SparkSession.builder()
       .appName(s"tpcds-${conf.phase}-sf${conf.scaleFactor}")
