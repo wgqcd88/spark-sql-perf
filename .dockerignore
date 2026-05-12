@@ -1,0 +1,9 @@
+target/
+project/target/
+project/project/
+.git/
+.idea/
+.bsp/
+.metals/
+.bloop/
+*.legacy
