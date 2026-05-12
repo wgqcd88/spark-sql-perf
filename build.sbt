@@ -14,6 +14,7 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-sql"  % sparkVersion % Provided,
   "org.apache.spark" %% "spark-hive" % sparkVersion % Provided,
   "org.apache.spark" %% "spark-mllib" % sparkVersion % Provided,
+  "com.github.scopt" %% "scopt"       % "3.7.1",
   "com.twitter"      %% "util-jvm"    % "6.45.0" % Provided,
   "org.yaml"          % "snakeyaml"   % "1.23",
   "org.scalatest"    %% "scalatest"   % "3.2.18" % Test
